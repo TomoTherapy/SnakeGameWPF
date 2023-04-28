@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,6 +17,8 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using System.Xml.Linq;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace SnakeGameWPF
 {
@@ -24,21 +28,37 @@ namespace SnakeGameWPF
     public partial class MainWindow : Window
     {
         public List<Rectangle> CurrentRecs { get; set; }
-        public int Score { get; set; }
-        private DispatcherTimer timer;
-
+        public string Score 
+        { 
+            get 
+            {
+                return $"SCORE : {score}";
+            } 
+        }
+        private int score;
+        private Stopwatch watch;
         private bool isGameStart;
         private Food food;
         private Snake snake;
+        private int targetInterval = 140;
+        private const int BOARD_SIZE = 30;
+
+        private SolidColorBrush snakeColor;
+        private SolidColorBrush foodColor;
 
         public MainWindow()
         {
             InitializeComponent();
 
+            snake = new Snake(0, 0, SnakeDirection.Up);
+            food = new Food(0, 0);
             CurrentRecs = new List<Rectangle>();
-            timer = new DispatcherTimer();
+            watch = new Stopwatch();
             isGameStart = true;
+            score = 0;
 
+            snakeColor = new SolidColorBrush(Color.FromArgb(255, 40, 200, 50));
+            foodColor = new SolidColorBrush(Color.FromArgb(255, 250, 40, 40));
         }
 
         private void GameBoard_KeyDown(object sender, KeyEventArgs e)
@@ -69,6 +89,12 @@ namespace SnakeGameWPF
                 case Key.D:
                     snake.Direction = SnakeDirection.Right;
                     break;
+                case Key.Space:
+                    GameStart_button_Click(sender, e);
+                    break;
+                case Key.Enter:
+                    GameStart_button_Click(sender, e);
+                    break;
                 default:
                     break;
             }
@@ -77,31 +103,23 @@ namespace SnakeGameWPF
         private void GameStart_button_Click(object sender, RoutedEventArgs e)
         {
             GameStart_button.Visibility = Visibility.Collapsed;
-
-            timer.Interval = TimeSpan.FromMilliseconds(100);
-            timer.Tick += GameLoop;
-            timer.Start();
-
+            GameOver_textBlock.Visibility = Visibility.Collapsed;
+            WASD_image.Visibility = Visibility.Collapsed;
+            watch.Start();
+            CompositionTarget.Rendering += GameLoop;
         }
 
         private void GameLoop(object? sender, EventArgs e)
         {
+            double elapsedTime = watch.Elapsed.TotalMilliseconds;
+            if (elapsedTime < targetInterval) return;
+
+            watch.Restart();
+
             if (isGameStart)
             {
                 InitializeGame();
                 isGameStart = false;
-
-                // draw it on game board
-                CurrentRecs.Clear();
-                foreach (var position in snake.Positions)
-                {
-                    Thickness thick = new Thickness() { Left = position.X * 10, Top = position.Y * 10 };
-                    CurrentRecs.Add(new Rectangle() { Fill = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0)), Margin = thick, Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top });
-                    GameBoard.Children.Add(CurrentRecs.Last());
-                }
-                Thickness foodThick1 = new Thickness() { Left = food.Position.X * 10, Top = food.Position.Y * 10 };
-                Rectangle foodRec1 = new Rectangle() { Fill = new SolidColorBrush(Color.FromArgb(255, 200, 10, 10)), Margin = foodThick1, Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
-                GameBoard.Children.Add(foodRec1);
                 return;
             }
 
@@ -128,7 +146,7 @@ namespace SnakeGameWPF
 
             // detect collision
             pos = snake.Positions[0];
-            if (pos.X < 0 || pos.X > 49 || pos.Y < 0 || pos.Y > 49)
+            if (pos.X < 0 || pos.X > BOARD_SIZE - 1 || pos.Y < 0 || pos.Y > BOARD_SIZE - 1)
             {
                 EndGame();
                 return;
@@ -146,9 +164,16 @@ namespace SnakeGameWPF
             // check food
             if (pos.X == food.Position.X && pos.Y == food.Position.Y)
             {
+                score++;
+                if (score == 7) targetInterval = 120;
+                if (score == 14) targetInterval = 100;
+                if (score == 21) targetInterval = 80;
+                if (score == 28) targetInterval = 60;
+                if (score == 36) targetInterval = 50;
+
                 Random rand = new Random();
-                int x = rand.Next(0, 49);
-                int y = rand.Next(0, 49);
+                int x = rand.Next(0, BOARD_SIZE - 1);
+                int y = rand.Next(0, BOARD_SIZE - 1);
 
                 while (true)
                 {
@@ -164,8 +189,8 @@ namespace SnakeGameWPF
 
                     if (isCollide)
                     {
-                        x = rand.Next(0, 49);
-                        y = rand.Next(0, 49);
+                        x = rand.Next(0, BOARD_SIZE - 1);
+                        y = rand.Next(0, BOARD_SIZE - 1);
                     }
                     else
                     {
@@ -180,26 +205,67 @@ namespace SnakeGameWPF
                 snake.Positions.RemoveAt(snake.Positions.Count - 1);
             }
 
+            Dispatcher.Invoke(() =>
+            {
+                // draw it on game board
+                DrawGameBoard();
+            });
+        }
+        private void InitializeGame()
+        {
+            Random rand = new Random();
+            int foodX = rand.Next(0, BOARD_SIZE - 1);
+            int foodY = rand.Next(0, BOARD_SIZE - 1);
+
+            int goldFoodX = rand.Next(0, BOARD_SIZE - 1);
+            int goldFoodY = rand.Next(0, BOARD_SIZE - 1);
+
+            int snakeX = rand.Next(9, BOARD_SIZE - 10);
+            int snakeY = rand.Next(9, BOARD_SIZE - 10);
+
+            double dist1 = Math.Sqrt(Math.Pow(foodX - snakeX, 2) + Math.Pow(foodY - snakeY, 2));
+            double dist2 = Math.Sqrt(Math.Pow(goldFoodX - snakeX, 2) + Math.Pow(goldFoodY - snakeY, 2));
+            while (dist1 < 5 && dist2 < 5)
+            {
+                snakeX = rand.Next(9, BOARD_SIZE - 10);
+                snakeY = rand.Next(9, BOARD_SIZE - 10);
+                dist1 = Math.Sqrt(Math.Pow(foodX - snakeX, 2) + Math.Pow(foodY - snakeY, 2));
+                dist2 = Math.Sqrt(Math.Pow(goldFoodX - snakeX, 2) + Math.Pow(goldFoodY - snakeY, 2));
+            }
+
+            int dir = rand.Next(0, 3);
+            food = new Food(foodX, foodY);
+            snake = new Snake(snakeX, snakeY, (SnakeDirection)dir);
+
             // draw it on game board
+            DrawGameBoard();
+        }
+
+        private void DrawGameBoard()
+        {
             CurrentRecs.Clear();
             GameBoard.Children.Clear();
             foreach (var position in snake.Positions)
             {
                 Thickness thick = new Thickness() { Left = position.X * 10, Top = position.Y * 10 };
-                CurrentRecs.Add(new Rectangle() { Fill = new SolidColorBrush(Color.FromArgb(255, 0, 0, 0)), Margin = thick, Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top });
+                CurrentRecs.Add(new Rectangle() { Fill = snakeColor, Margin = thick, Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top });
                 GameBoard.Children.Add(CurrentRecs.Last());
             }
             Thickness foodThick = new Thickness() { Left = food.Position.X * 10, Top = food.Position.Y * 10 };
-            Rectangle foodRec = new Rectangle() { Fill = new SolidColorBrush(Color.FromArgb(255, 200, 10, 10)), Margin = foodThick, Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
-            GameBoard.Children.Add(foodRec);
+            Ellipse foodEll = new Ellipse() { Fill = foodColor, Margin = foodThick, Width = 10, Height = 10, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+            Score_textBlock.Text = Score;
+            GameBoard.Children.Add(foodEll);
         }
 
         private void EndGame()
         {
-            timer.Stop();
+            CompositionTarget.Rendering -= GameLoop;
+            isGameStart = true;
             GameStart_button.Visibility = Visibility.Visible;
 
-            GameBoard.Children.Clear();
+            score = 0;
+            targetInterval = 140;
+            GameOver_textBlock.Visibility = Visibility.Visible;
         }
 
         private bool CheckCollision(int x1, int y1, int x2, int y2)
@@ -211,28 +277,15 @@ namespace SnakeGameWPF
             return false;
         }
 
-        private void InitializeGame()
+        private void Grid_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            Random rand = new Random();
-            int foodX = rand.Next(0, 49);
-            int foodY = rand.Next(0, 49);
-
-            int snakeX = rand.Next(9, 40);
-            int snakeY = rand.Next(9, 40);
-
-            double dist = Math.Sqrt(Math.Pow(foodX - snakeX, 2) + Math.Pow(foodY - foodX, 2));
-            while (dist < 5)
-            {
-                snakeX = rand.Next(9, 40);
-                snakeY = rand.Next(9, 40);
-                dist = Math.Sqrt(Math.Pow(foodX - snakeX, 2) + Math.Pow(foodY - foodX, 2));
-            }
-
-            int dir = rand.Next(0, 3);
-            food = new Food(foodX, foodY);
-            snake = new Snake(snakeX, snakeY, (SnakeDirection)dir);
+            DragMove();
         }
 
+        private void Button_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
     }
 
     public class Snake
