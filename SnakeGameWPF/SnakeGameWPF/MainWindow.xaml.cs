@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -46,9 +47,22 @@ namespace SnakeGameWPF
         private SolidColorBrush snakeColor;
         private SolidColorBrush foodColor;
 
+        private System.Media.SoundPlayer beepPlayer;
+        private System.Media.SoundPlayer deathPlayer;
+        private WMPLib.WindowsMediaPlayer wmp = new WMPLib.WindowsMediaPlayer();
+
         public MainWindow()
         {
             InitializeComponent();
+
+            beepPlayer = new System.Media.SoundPlayer();
+            beepPlayer.SoundLocation = "Assets/beep3-98810.wav";
+            deathPlayer = new System.Media.SoundPlayer();
+            deathPlayer.SoundLocation = "Assets/videogame-death-sound-43894.wav";
+            wmp.URL = "Assets/videoplayback.mp3";
+            wmp.settings.volume = 9;
+            wmp.settings.setMode("loop", true);
+            wmp.controls.play();
 
             snake = new Snake(0, 0, SnakeDirection.Up);
             food = new Food(0, 0);
@@ -164,6 +178,7 @@ namespace SnakeGameWPF
             // check food
             if (pos.X == food.Position.X && pos.Y == food.Position.Y)
             {
+                beepPlayer.Play();
                 score++;
                 if (score == 7) targetInterval = 120;
                 if (score == 14) targetInterval = 100;
@@ -259,6 +274,7 @@ namespace SnakeGameWPF
 
         private void EndGame()
         {
+            deathPlayer.Play();
             CompositionTarget.Rendering -= GameLoop;
             isGameStart = true;
             GameStart_button.Visibility = Visibility.Visible;
