@@ -60,7 +60,7 @@ namespace SnakeGameWPF
             deathPlayer = new System.Media.SoundPlayer();
             deathPlayer.SoundLocation = "Assets/videogame-death-sound-43894.wav";
             wmp.URL = "Assets/videoplayback.mp3";
-            wmp.settings.volume = 9;
+            wmp.settings.volume = 4;
             wmp.settings.setMode("loop", true);
             wmp.controls.play();
 
